@@ -12,15 +12,14 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"periph.io/x/conn/v3"
+	"periph.io/x/conn/v3/gpio"
+	"periph.io/x/conn/v3/gpio/gpioreg"
+	"periph.io/x/conn/v3/physic"
+	"periph.io/x/conn/v3/spi"
+	"periph.io/x/conn/v3/spi/spireg"
+	"periph.io/x/host/v3"
 	"time"
-
-	"periph.io/x/periph/conn"
-	"periph.io/x/periph/conn/gpio"
-	"periph.io/x/periph/conn/gpio/gpioreg"
-	"periph.io/x/periph/conn/physic"
-	"periph.io/x/periph/conn/spi"
-	"periph.io/x/periph/conn/spi/spireg"
-	"periph.io/x/periph/host"
 )
 
 const (
@@ -304,7 +303,7 @@ func (e *Epd) Sleep() {
 	e.sendCommand(POWER_OFF)
 	e.waitUntilIdle()
 	e.sendCommand(DEEP_SLEEP)
-	e.sendData(0XA5)
+	e.sendData(0xA5)
 }
 
 // Convert converts the input image into a ready-to-display byte buffer.
