@@ -26,7 +26,12 @@ func main() {
 		log.Panic(err)
 	}
 
-	defer imgFile1.Close()
+	defer func() {
+		err := imgFile1.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
 
 	img1, err := png.Decode(imgFile1)
 	if err != nil {
@@ -45,7 +50,12 @@ func main() {
 		log.Panic(err)
 	}
 
-	defer imgFile2.Close()
+	defer func() {
+		err := imgFile2.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
 
 	img2, err := png.Decode(imgFile2)
 	if err != nil {
@@ -64,7 +74,12 @@ func main() {
 		log.Panic(err)
 	}
 
-	defer imgFile3.Close()
+	defer func() {
+		err := imgFile3.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
 
 	img3, err := png.Decode(imgFile3)
 	if err != nil {
