@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
+	"github.com/Ahbrown41/rpi_waveshare/epd7in5"
 	"github.com/fogleman/gg"
-	"github.com/gandaldf/rpi/epd7in5"
 )
 
 func main() {

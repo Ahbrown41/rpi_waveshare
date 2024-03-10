@@ -1,6 +1,6 @@
 module github.com/Ahbrown41/rpi_waveshare
 
-go 1.21
+go 1.22
 
 require (
 	github.com/MaxHalford/halfgone v0.0.0-20171017091812-482157b86ccb

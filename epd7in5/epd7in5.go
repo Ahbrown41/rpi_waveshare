@@ -12,6 +12,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"log"
 	"periph.io/x/conn/v3"
 	"periph.io/x/conn/v3/gpio"
 	"periph.io/x/conn/v3/gpio/gpioreg"
@@ -23,48 +24,19 @@ import (
 )
 
 const (
-	EPD_WIDTH  int = 640
-	EPD_HEIGHT int = 384
+	Epd7in5V2Width  = 800
+	Epd7in5V2Height = 480
 )
 
 const (
-	PANEL_SETTING                  byte = 0x00
-	POWER_SETTING                  byte = 0x01
-	POWER_OFF                      byte = 0x02
-	POWER_OFF_SEQUENCE_SETTING     byte = 0x03
-	POWER_ON                       byte = 0x04
-	POWER_ON_MEASURE               byte = 0x05
-	BOOSTER_SOFT_START             byte = 0x06
-	DEEP_SLEEP                     byte = 0x07
-	DATA_START_TRANSMISSION_1      byte = 0x10
-	DATA_STOP                      byte = 0x11
-	DISPLAY_REFRESH                byte = 0x12
-	IMAGE_PROCESS                  byte = 0x13
-	LUT_FOR_VCOM                   byte = 0x20
-	LUT_BLUE                       byte = 0x21
-	LUT_WHITE                      byte = 0x22
-	LUT_GRAY_1                     byte = 0x23
-	LUT_GRAY_2                     byte = 0x24
-	LUT_RED_0                      byte = 0x25
-	LUT_RED_1                      byte = 0x26
-	LUT_RED_2                      byte = 0x27
-	LUT_RED_3                      byte = 0x28
-	LUT_XON                        byte = 0x29
-	PLL_CONTROL                    byte = 0x30
-	TEMPERATURE_SENSOR_COMMAND     byte = 0x40
-	TEMPERATURE_CALIBRATION        byte = 0x41
-	TEMPERATURE_SENSOR_WRITE       byte = 0x42
-	TEMPERATURE_SENSOR_READ        byte = 0x43
-	VCOM_AND_DATA_INTERVAL_SETTING byte = 0x50
-	LOW_POWER_DETECTION            byte = 0x51
-	TCON_SETTING                   byte = 0x60
-	TCON_RESOLUTION                byte = 0x61
-	SPI_FLASH_CONTROL              byte = 0x65
-	REVISION                       byte = 0x70
-	GET_STATUS                     byte = 0x71
-	AUTO_MEASUREMENT_VCOM          byte = 0x80
-	READ_VCOM_VALUE                byte = 0x81
-	VCM_DC_SETTING                 byte = 0x82
+	PanelSetting            byte = 0x00
+	PowerSetting            byte = 0x01
+	PowerOff                byte = 0x02
+	PowerOffSequenceSetting byte = 0x03
+	DeepSleep               byte = 0x07
+	DataStartTransmission1  byte = 0x10
+	DisplayRefresh          byte = 0x12
+	AutoMeasurementVcom     byte = 0x80
 )
 
 // Epd is a handle to the display controller.
@@ -136,19 +108,16 @@ func New(dcPin, csPin, rstPin, busyPin string) (*Epd, error) {
 
 	c, err := port.Connect(5*physic.MegaHertz, spi.Mode0, 8)
 	if err != nil {
-		port.Close()
+		if err := port.Close(); err != nil {
+			return nil, err
+		}
 		return nil, err
 	}
 
 	var widthByte, heightByte int
 
-	if EPD_WIDTH%8 == 0 {
-		widthByte = (EPD_WIDTH / 8)
-	} else {
-		widthByte = (EPD_WIDTH/8 + 1)
-	}
-
-	heightByte = EPD_HEIGHT
+	widthByte = Epd7in5V2Width / 8
+	heightByte = Epd7in5V2Height
 
 	e := &Epd{
 		c:          c,
@@ -164,105 +133,295 @@ func New(dcPin, csPin, rstPin, busyPin string) (*Epd, error) {
 }
 
 // Reset can be also used to awaken the device.
-func (e *Epd) Reset() {
-	e.rst.Out(gpio.High)
-	time.Sleep(200 * time.Millisecond)
-	e.rst.Out(gpio.Low)
-	time.Sleep(200 * time.Millisecond)
-	e.rst.Out(gpio.High)
-	time.Sleep(200 * time.Millisecond)
-}
-
-func (e *Epd) sendCommand(cmd byte) {
-	e.dc.Out(gpio.Low)
-	e.cs.Out(gpio.Low)
-	e.c.Tx([]byte{cmd}, nil)
-	e.cs.Out(gpio.High)
-}
-
-func (e *Epd) sendData(data byte) {
-	e.dc.Out(gpio.High)
-	e.cs.Out(gpio.Low)
-	e.c.Tx([]byte{data}, nil)
-	e.cs.Out(gpio.High)
-}
-
-func (e *Epd) waitUntilIdle() {
-	for e.busy.Read() == gpio.Low {
-		time.Sleep(100 * time.Millisecond)
+func (e *Epd) Reset() error {
+	if err := e.rst.Out(gpio.High); err != nil {
+		return err
 	}
+	time.Sleep(20 * time.Millisecond)
+	if err := e.rst.Out(gpio.Low); err != nil {
+		return err
+	}
+	time.Sleep(2 * time.Millisecond)
+	if err := e.rst.Out(gpio.High); err != nil {
+		return err
+	}
+	time.Sleep(20 * time.Millisecond)
+	return nil
 }
 
-func (e *Epd) turnOnDisplay() {
-	e.sendCommand(DISPLAY_REFRESH)
+/**
+ * Send Command
+ */
+func (e *Epd) sendCommand(cmd byte) error {
+	if err := e.dc.Out(gpio.Low); err != nil {
+		return err
+	}
+	if err := e.cs.Out(gpio.Low); err != nil {
+		return err
+	}
+	if err := e.c.Tx([]byte{cmd}, nil); err != nil {
+		return err
+	}
+	if err := e.cs.Out(gpio.High); err != nil {
+		return err
+	}
+	return nil
+}
+
+/**
+ * Write Data
+ */
+func (e *Epd) sendData(data byte) error {
+	if err := e.dc.Out(gpio.High); err != nil {
+		return err
+	}
+	if err := e.cs.Out(gpio.Low); err != nil {
+		return err
+	}
+	if err := e.c.Tx([]byte{data}, nil); err != nil {
+		return err
+	}
+	if err := e.cs.Out(gpio.High); err != nil {
+		return err
+	}
+	return nil
+}
+
+// WaitUntilIdle waits until the display is idle.
+func (e *Epd) waitUntilIdle() {
+	log.Println("e-paper busy")
+	for e.busy.Read() == gpio.Low {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(5 * time.Millisecond)
+	log.Println("e-paper busy release")
+}
+
+// TurnOnDisplay Turns on the display.
+func (e *Epd) turnOnDisplay() error {
+	if err := e.sendCommand(DisplayRefresh); err != nil {
+		return err
+	}
 	time.Sleep(100 * time.Millisecond)
 	e.waitUntilIdle()
+	return nil
 }
 
 // Init initializes the display config.
 // It should be only used when you put the device to sleep and need to re-init the device.
-func (e *Epd) Init() {
-	e.Reset()
+func (e *Epd) Init() error {
+	log.Println("e-paper init")
+	if err := e.Reset(); err != nil {
+		return err
+	}
 
-	e.sendCommand(POWER_SETTING)
-	e.sendData(0x37)
-	e.sendData(0x00)
+	if err := e.sendCommand(PowerSetting); err != nil {
+		return err
+	} //POWER SETTING
 
-	e.sendCommand(PANEL_SETTING)
-	e.sendData(0xCF)
-	e.sendData(0x08)
+	if err := e.sendData(0x07); err != nil {
+		return err
+	}
+	if err := e.sendData(0x07); err != nil {
+		return err
+	} //VGH=20V,VGL=-20V
+	if err := e.sendData(0x3f); err != nil {
+		return err
+	} //VDH=15V
+	if err := e.sendData(0x3f); err != nil {
+		return err
+	} //VDL=-15V
 
-	e.sendCommand(BOOSTER_SOFT_START)
-	e.sendData(0xc7)
-	e.sendData(0xcc)
-	e.sendData(0x28)
+	if err := e.sendCommand(0x06); err != nil {
+		return err
+	}
+	if err := e.sendData(0x17); err != nil {
+		return err
+	}
+	if err := e.sendData(0x17); err != nil {
+		return err
+	}
+	if err := e.sendData(0x28); err != nil {
+		return err
+	}
+	if err := e.sendData(0x17); err != nil {
+		return err
+	}
 
-	e.sendCommand(POWER_ON)
+	if err := e.sendCommand(0x04); err != nil {
+		return err
+	} //POWER ON
+	time.Sleep(100 * time.Millisecond)
 	e.waitUntilIdle()
 
-	e.sendCommand(PLL_CONTROL)
-	e.sendData(0x3c)
+	if err := e.sendCommand(0x00); err != nil {
+		return err
+	} //PANNEL SETTING
+	if err := e.sendData(0x1F); err != nil {
+		return err
+	} //KW-3f   KWR-2F	BWROTP 0f	BWOTP 1f
 
-	e.sendCommand(TEMPERATURE_CALIBRATION)
-	e.sendData(0x00)
+	if err := e.sendCommand(0x61); err != nil {
+		return err
+	}
+	if err := e.sendData(0x03); err != nil {
+		return err
+	}
+	if err := e.sendData(0x20); err != nil {
+		return err
+	}
+	if err := e.sendData(0x01); err != nil {
+		return err
+	}
+	if err := e.sendData(0xE0); err != nil {
+		return err
+	}
 
-	e.sendCommand(VCOM_AND_DATA_INTERVAL_SETTING)
-	e.sendData(0x77)
+	if err := e.sendCommand(0x15); err != nil {
+		return err
+	}
+	if err := e.sendData(0x00); err != nil {
+		return err
+	}
 
-	e.sendCommand(TCON_SETTING)
-	e.sendData(0x22)
+	if err := e.sendCommand(0x50); err != nil {
+		return err
+	}
+	if err := e.sendData(0x10); err != nil {
+		return err
+	}
+	if err := e.sendData(0x07); err != nil {
+		return err
+	}
 
-	e.sendCommand(TCON_RESOLUTION)
-	e.sendData(byte(EPD_WIDTH >> 8))
-	e.sendData(byte(EPD_WIDTH & 0xff))
-	e.sendData(byte(EPD_HEIGHT >> 8))
-	e.sendData(byte(EPD_HEIGHT & 0xff))
+	if err := e.sendCommand(0x60); err != nil {
+		return err
+	}
+	if err := e.sendData(0x22); err != nil {
+		return err
+	}
+	return nil
+}
 
-	e.sendCommand(VCM_DC_SETTING)
-	e.sendData(0x1E)
+func (e *Epd) InitFast() error {
+	if err := e.Reset(); err != nil {
+		return err
+	}
+	if err := e.sendCommand(0x00); err != nil {
+		return err
+	}
+	if err := e.sendData(0x1F); err != nil {
+		return err
+	}
 
-	e.sendCommand(0xe5)
-	e.sendData(0x03)
+	if err := e.sendCommand(0x50); err != nil {
+		return err
+	}
+	if err := e.sendData(0x10); err != nil {
+		return err
+	}
+	if err := e.sendData(0x07); err != nil {
+		return err
+	}
+
+	if err := e.sendCommand(0x04); err != nil {
+		return err
+	} //POWER ON
+	time.Sleep(100 * time.Millisecond)
+	e.waitUntilIdle()
+
+	if err := e.sendCommand(0x06); err != nil {
+		return err
+	}
+	if err := e.sendData(0x27); err != nil {
+		return err
+	}
+	if err := e.sendData(0x27); err != nil {
+		return err
+	}
+	if err := e.sendData(0x18); err != nil {
+		return err
+	}
+	if err := e.sendData(0x17); err != nil {
+		return err
+	}
+
+	if err := e.sendCommand(0xE0); err != nil {
+		return err
+	}
+	if err := e.sendData(0x02); err != nil {
+		return err
+	}
+	if err := e.sendData(0xE5); err != nil {
+		return err
+	}
+	if err := e.sendData(0x5A); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *Epd) InitPart() error {
+	if err := e.Reset(); err != nil {
+		return err
+	}
+	if err := e.sendCommand(0x00); err != nil {
+		return err
+	}
+	if err := e.sendData(0x1F); err != nil {
+		return err
+	}
+
+	if err := e.sendCommand(0x04); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+	e.waitUntilIdle()
+
+	if err := e.sendCommand(0xE0); err != nil {
+		return err
+	}
+	if err := e.sendData(0x02); err != nil {
+		return err
+	}
+	if err := e.sendCommand(0xE5); err != nil {
+		return err
+	}
+	if err := e.sendData(0x6E); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Clear clears the screen.
-func (e *Epd) Clear() {
-	e.sendCommand(DATA_START_TRANSMISSION_1)
+func (e *Epd) Clear() error {
+	if err := e.sendCommand(DataStartTransmission1); err != nil {
+		return err
+	}
 
 	for j := 0; j < e.heightByte; j++ {
 		for i := 0; i < e.widthByte; i++ {
 			for k := 0; k < 4; k++ {
-				e.sendData(0x33)
+				if err := e.sendData(0x33); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	e.turnOnDisplay()
+	if err := e.turnOnDisplay(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Display takes a byte buffer and updates the screen.
-func (e *Epd) Display(img []byte) {
-	e.sendCommand(DATA_START_TRANSMISSION_1)
+func (e *Epd) Display(img []byte) error {
+	log.Println("Start e-paper display")
+	if err := e.sendCommand(DataStartTransmission1); err != nil {
+		return err
+	}
 
 	for j := 0; j < e.heightByte; j++ {
 		for i := 0; i < e.widthByte; i++ {
@@ -271,50 +430,63 @@ func (e *Epd) Display(img []byte) {
 			for k := 0; k < 8; k++ {
 				var data byte
 
-				if dataBlack&0x80 > 0 {
-					data = 0x00
+				if dataBlack&AutoMeasurementVcom > 0 {
+					data = PanelSetting
 				} else {
-					data = 0x03
+					data = PowerOffSequenceSetting
 				}
 
 				data <<= 4
 				dataBlack <<= 1
 				k++
 
-				if dataBlack&0x80 > 0 {
-					data |= 0x00
+				if dataBlack&AutoMeasurementVcom > 0 {
+					data |= PanelSetting
 				} else {
-					data |= 0x03
+					data |= PowerOffSequenceSetting
 				}
 
 				dataBlack <<= 1
 
-				e.sendData(data)
+				if err := e.sendData(data); err != nil {
+					return err
+				}
 			}
 		}
 	}
-
-	e.turnOnDisplay()
+	log.Println("End e-paper display image process")
+	if err := e.turnOnDisplay(); err != nil {
+		return err
+	}
+	log.Println("End e-paper display")
+	return nil
 }
 
 // Sleep puts the display in power-saving mode.
 // You can use Reset() to awaken and Init() to re-initialize the display.
-func (e *Epd) Sleep() {
-	e.sendCommand(POWER_OFF)
+func (e *Epd) Sleep() error {
+	if err := e.sendCommand(PowerOff); err != nil {
+		return err
+	}
 	e.waitUntilIdle()
-	e.sendCommand(DEEP_SLEEP)
-	e.sendData(0xA5)
+	if err := e.sendCommand(DeepSleep); err != nil {
+		return err
+	}
+	if err := e.sendData(0xA5); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Convert converts the input image into a ready-to-display byte buffer.
 func (e *Epd) Convert(img image.Image) []byte {
-	var byteToSend byte = 0x00
+	var byteToSend byte = PanelSetting
 	var bgColor = 1
 
-	buffer := bytes.Repeat([]byte{0x00}, e.widthByte*e.heightByte)
+	buffer := bytes.Repeat([]byte{PanelSetting}, e.widthByte*e.heightByte)
 
-	for j := 0; j < EPD_HEIGHT; j++ {
-		for i := 0; i < EPD_WIDTH; i++ {
+	for j := 0; j < Epd7in5V2Height; j++ {
+		for i := 0; i < Epd7in5V2Width; i++ {
 			bit := bgColor
 
 			if i < img.Bounds().Dx() && j < img.Bounds().Dy() {
@@ -322,12 +494,12 @@ func (e *Epd) Convert(img image.Image) []byte {
 			}
 
 			if bit == 1 {
-				byteToSend |= 0x80 >> (uint32(i) % 8)
+				byteToSend |= AutoMeasurementVcom >> (uint32(i) % 8)
 			}
 
 			if i%8 == 7 {
 				buffer[(i/8)+(j*e.widthByte)] = byteToSend
-				byteToSend = 0x00
+				byteToSend = PanelSetting
 			}
 		}
 	}

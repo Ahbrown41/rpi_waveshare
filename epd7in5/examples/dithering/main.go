@@ -1,10 +1,9 @@
 package main
 
 import (
-	"log"
-
+	"github.com/Ahbrown41/rpi_waveshare/epd7in5"
 	"github.com/MaxHalford/halfgone"
-	"github.com/gandaldf/rpi/epd7in5"
+	"log"
 )
 
 func main() {
